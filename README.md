@@ -35,6 +35,16 @@ cmake ..
 make
 ```
 
+### Compliation on windows
+```
+git clone --recurse https://github.com/zurutech/pillow-resize.git
+cd pillow-resize
+git submodule update --init --recursive
+mkdir build && cd build
+cmake -S .. -DCMKAKE_PREFIX_PATH="C:/path/opencv/build"
+cmake --build . --config Release
+```
+
 ### Test
 If you want to run also the tests, you need to install [`gtest`](https://github.com/google/googletest).
 
