@@ -28,122 +28,49 @@ namespace fs = std::filesystem;
 
 int main(int argc, char** argv)
 {
-    CLI::App app{"Resize an image using Pillow resample"};
+    int width = 100;
+    int height = 100;
+    int new_width = 10;
+    int new_height = 10;
 
-    fs::path image_path, out_path;
-    app.add_option("-i,--input", image_path, "Input image path.")->mandatory();
-    app.add_option("-o,--output", out_path,
-                   "Output image folder. \n"
-                   "If empty the output image will be saved in the "
-                   "input directory with the suffix '_resized'.");
-
-    uint width = 0, height = 0;
-    app.add_option("--ow,--width", width,
-                   "Output image width. (default: 0).\n"
-                   "If you want to set the output image size you need to pass "
-                   "both width and height.");
-    app.add_option("--oh,--height", height,
-                   "Output image height. (default: 0)");
-
-    double fx = 0., fy = 0.;
-    app.add_option("--horizontal_scale_factor,--fx", fx,
-                   "Scale factor along the horizontal axis. (default: 0).\n"
-                   "Output image size will automatically computed as "
-                   "image_width*horizontal_scale_factor.\n"
-                   "If you want to set the scale you need to pass "
-                   "both horizontal_scale_factor and vertical_scale_factor.");
-    app.add_option("--vertical_scale_factor,--fy", fy,
-                   "Scale factor along the vertical axis. (default: 0)\n"
-                   "Output image size will automatically computed as "
-                   "image_height*vertical_scale_factor.");
-
-    // enum_names return list of name sorted by enum values.
-    constexpr auto& interpolation_names =
-        magic_enum::enum_names<PillowResize::InterpolationMethods>();
-    std::stringstream interpolation_help;
-    interpolation_help << "Interpolation method. \nValid values in:\n";
-    for (size_t i = 0; i < interpolation_names.size(); ++i) {
-        interpolation_help << interpolation_names[i] << " -> " << i
-                           << std::endl;
-    }
-
-    auto transformArgToEnum = [](const std::string& s) -> std::string {
-        auto isInt = [](const std::string& s, int& value) -> bool {
-            try {
-                value = std::stoi(s);
-                return true;
-            }
-            catch (const std::exception& /*unused*/) {
-                return false;
-            }
-        };
-
-        std::optional<PillowResize::InterpolationMethods> interpolation;
-        int arg_converted;
-        if (isInt(s, arg_converted)) {
-            interpolation =
-                magic_enum::enum_cast<PillowResize::InterpolationMethods>(
-                    arg_converted);
+    // Construct fake image
+    cv::Mat src(height, width, CV_8UC3);
+    for (int i = 0; i < height; ++i) {
+        for (int j = 0; j < width; ++j) {
+            uchar val = static_cast<uchar>(i + j);
+            src.at<cv::Vec3b>(i, j) = cv::Vec3b(val, val, val);
         }
-        else {
-            interpolation =
-                magic_enum::enum_cast<PillowResize::InterpolationMethods>(s);
+    }
+#ifdef PRINT_ORIGIN_IMAGE
+    std::cout << "Origin image:" << std::endl;
+    for (int i = 0; i < height; ++i) {
+        for (int j = 0; j < width; ++j) {
+            auto p = src.at<cv::Vec3b>(i, j);
+            std::cout << "(" << (int)p[0] << "," << (int)p[1] << ","
+                      << (int)p[2] << ") ";
         }
-        if (!interpolation.has_value()) {
-            throw CLI::ValidationError("Interpolation method not valid.");
+        std::cout << std::endl;
+    }
+#endif
+    // Assume filter=3 represents bicubic (confirm based on your implementation)
+    int filter = 3;
+
+    // Align with PIL to process the entire image
+    cv::Rect2f box(0.f, 0.f, width, height);
+
+
+    cv::Mat resized =
+        PillowResize::resize(src, cv::Size(new_width, new_height), filter, box);
+
+    std::cout << "\nResized image:" << std::endl;
+    for (int i = 0; i < new_height; ++i) {
+        for (int j = 0; j < new_width; ++j) {
+            auto p = resized.at<cv::Vec3b>(i, j);
+            std::cout << "(" << (int)p[0] << "," << (int)p[1] << ","
+                      << (int)p[2] << ") ";
         }
-        return std::to_string(magic_enum::enum_integer(interpolation.value()));
-    };
-
-    PillowResize::InterpolationMethods interpolation =
-        PillowResize::InterpolationMethods::INTERPOLATION_BILINEAR;
-    app.add_option("-m, --method", interpolation, interpolation_help.str())
-        ->required()
-        ->transform(transformArgToEnum);
-
-    CLI11_PARSE(app, argc, argv);
-
-    // Check if out_path is empty.
-    // If empty, create out_path from image_path with the suffix _resized.
-    if (out_path.empty()) {
-        out_path = image_path.parent_path() /
-                   (image_path.stem().string() + "_" +
-                    std::string(magic_enum::enum_name(interpolation)) +
-                    image_path.extension().string());
+        std::cout << std::endl;
     }
-
-    auto out_parent_path = out_path.parent_path();
-    // If image_path is a relative path to the current directory,
-    // its parent path will be empty.
-    // This is necessary in case the library is installed and the binary
-    // is run using its full path (installation folder) from a folder with images.
-    if (out_parent_path.empty()) {
-        out_path = fs::current_path() / out_path;
-        out_parent_path = fs::current_path();
-    }
-    if (!fs::exists(out_parent_path)) {
-        fs::create_directories(out_parent_path);
-    }
-
-    cv::Mat input = cv::imread(image_path.string(), cv::IMREAD_ANYCOLOR);
-
-    cv::Size out_size;
-    if (width != 0 && height != 0) {
-        out_size = cv::Size(width, height);
-    }
-    else if (fx > 0 && fy > 0) {
-        out_size = cv::Size(static_cast<int>(input.size().width * fx),
-                            static_cast<int>(input.size().height * fy));
-    }
-    else {
-        std::cout << "You need to set the output size. \n"
-                     "Set both width and height or both fx and fy."
-                  << std::endl;
-        return EXIT_FAILURE;
-    }
-    cv::Mat out = PillowResize::resize(input, out_size, interpolation);
-
-    cv::imwrite(out_path.string(), out);
 
     return EXIT_SUCCESS;
 }
