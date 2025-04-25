@@ -41,7 +41,7 @@ git clone --recurse https://github.com/zurutech/pillow-resize.git
 cd pillow-resize
 git submodule update --init --recursive
 mkdir build && cd build
-cmake -S .. -DCMKAKE_PREFIX_PATH="C:/path/opencv/build"
+cmake -S .. -DOpenCV_DIR=="C:/path/opencv/build"
 cmake --build . --config Release
 ```
 
